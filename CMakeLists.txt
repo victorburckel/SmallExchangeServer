@@ -33,7 +33,7 @@ include(${_project_options_SOURCE_DIR}/Index.cmake)
 
 # Set the project name and language
 project(
-  SmallExchangeServer
+  exchange_server
   VERSION 0.0.1
   DESCRIPTION ""
   HOMEPAGE_URL "https://github.com/victorburckel/SmallExchangeServer"
@@ -118,13 +118,12 @@ dynamic_project_options(
   --suppress=unmatchedSuppression
   --suppress=passedByValue
   --suppress=syntaxError
-  --inconclusive
-)
+  --inconclusive)
 
 target_compile_features(project_options INTERFACE cxx_std_${CMAKE_CXX_STANDARD})
 # TODO: The INTERFACE library NAMESPACE ALIAS are missing! CK
-add_library(SmallExchangeServer::project_options INTERFACE IMPORTED)
-add_library(SmallExchangeServer::project_warnings INTERFACE IMPORTED)
+add_library(exchange_server::project_options INTERFACE IMPORTED)
+add_library(exchange_server::project_warnings INTERFACE IMPORTED)
 
 # configure files based on CMake configuration options
 add_subdirectory(configured_files)
@@ -165,7 +164,11 @@ endif()
 
 # Add other targets that you want installed here, be default we just package the one executable
 # we know we want to ship
-package_project(TARGETS intro project_options project_warnings
+package_project(
+  TARGETS
+  intro
+  project_options
+  project_warnings
   # FIXME: this does not work! CK
   # PRIVATE_DEPENDENCIES_CONFIGURED project_options project_warnings
 )
