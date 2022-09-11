@@ -3,7 +3,17 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 
 # Generic test that uses conan libs
-add_executable(intro main.cpp)
+add_executable(
+  intro
+  epoll_impl.cpp
+  epoll_impl.h
+  exchange_server.cpp
+  exchange_server.h
+  main.cpp
+  socket_impl.cpp
+  socket_impl.h
+  utilities.cpp
+  utilities.h)
 target_link_libraries(
   intro
   PUBLIC exchange_server::project_options exchange_server::project_warnings

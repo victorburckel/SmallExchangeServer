@@ -16,6 +16,7 @@ max_pargs_hwrap: 3
 separate_ctrl_name_with_space: false
 separate_fn_name_with_space: false
 tab_size: 2
+autosort: true
 
 markup:
   enable_markup: false
