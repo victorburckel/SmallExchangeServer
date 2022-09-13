@@ -10,10 +10,14 @@ add_executable(
   exchange_server.cpp
   exchange_server.h
   main.cpp
+  scope_exit.cpp
+  scope_exit.h
   socket_impl.cpp
   socket_impl.h
   utilities.cpp
-  utilities.h)
+  utilities.h
+  worker.cpp
+  worker.h)
 target_link_libraries(
   intro
   PUBLIC exchange_server::project_options exchange_server::project_warnings

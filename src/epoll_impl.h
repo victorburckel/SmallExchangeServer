@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -11,9 +13,9 @@ class epoll_impl
 public:
   epoll_impl();
   epoll_impl(const epoll_impl &) = delete;
-  epoll_impl(epoll_impl &&) = default;
+  epoll_impl(epoll_impl &&) noexcept = default;
   epoll_impl &operator=(const epoll_impl &) = delete;
-  epoll_impl &operator=(epoll_impl &&) = default;
+  epoll_impl &operator=(epoll_impl &&) noexcept = default;
   ~epoll_impl();
 
   void add(int fd, std::uint32_t events) const;
