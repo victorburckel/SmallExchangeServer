@@ -1,4 +1,5 @@
 #include "exchange_server.h"
+#include "order.h"
 #include "worker.h"
 #include <spdlog/spdlog.h>
 #include <sys/epoll.h>
@@ -6,13 +7,13 @@
 
 namespace exchange_server {
 
-enum class ClientState { Connected, Identified };
+enum class client_state { connected, identified };
 
-struct server::ClientData
+struct server::client_data
 {
-  ClientState state{ ClientState::Connected };
+  client_state state{ client_state::connected };
   std::string name;
-  std::vector<char> receiveBuffer;
+  std::vector<char> buffer;
 };
 
 server::server(int port, std::shared_ptr<worker> worker) : _worker{ std::move(worker) }, _listener{ port }
@@ -40,12 +41,12 @@ void server::on_connect()
 {
   const auto client_fd = _listener.accept();
   if (client_fd) { _epoll.add(*client_fd, EPOLLIN); }
-  _clientData[*client_fd] = std::make_shared<ClientData>();
+  _client_data[*client_fd] = std::make_shared<client_data>();
 }
 
 void server::on_read(int fd)
 {
-  auto &clientData = _clientData.at(fd);
+  auto &client_data = _client_data.at(fd);
 
   std::array<char, 1024> buffer{};
   auto bytes_read = ::recv(fd, buffer.data(), buffer.size(), 0);
@@ -58,7 +59,34 @@ void server::on_read(int fd)
 
   spdlog::trace("Received message: {}", message);
 
-  clientData->receiveBuffer.insert(clientData->receiveBuffer.end(), message.begin(), message.end());
+  client_data->buffer.insert(client_data->buffer.end(), message.begin(), message.end());
+
+  const auto it = std::find(client_data->buffer.begin(), client_data->buffer.end(), '\n');
+  if (it != client_data->buffer.end()) {
+    _worker->post([this, message = std::string{ client_data->buffer.begin(), it }, client_data] {
+      on_client_message(message, *client_data);
+    });
+
+    client_data->buffer.erase(client_data->buffer.begin(), it);
+  }
+}
+
+namespace {
+
+  constexpr std::string_view order_prefix{ "order" };
+}
+
+void server::on_client_message(const std::string &message, client_data &client_data)
+{
+  spdlog::trace("Processing message: {}", message);
+  if (message.starts_with("id")) {
+    client_data.name = message.substr(2);
+    client_data.state = client_state::identified;
+  } else if (message.starts_with(order_prefix)) {
+    if (client_data.state == client_state::identified) {
+      auto order = parse_order(std::string_view{ message }.substr(order_prefix.size()));
+    }
+  }
 }
 
 }

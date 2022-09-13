@@ -2,14 +2,14 @@ find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 
-# Generic test that uses conan libs
-add_executable(
-  intro
+add_library(
+  server_lib
   epoll_impl.cpp
   epoll_impl.h
   exchange_server.cpp
   exchange_server.h
-  main.cpp
+  order.cpp
+  order.h
   scope_exit.cpp
   scope_exit.h
   socket_impl.cpp
@@ -18,9 +18,21 @@ add_executable(
   utilities.h
   worker.cpp
   worker.h)
+
+target_include_directories(server_lib PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+
 target_link_libraries(
-  intro
+  server_lib
   PUBLIC exchange_server::project_options exchange_server::project_warnings
   PRIVATE CLI11::CLI11 fmt::fmt spdlog::spdlog)
 
-target_include_directories(intro PRIVATE "${CMAKE_BINARY_DIR}/configured_files/include")
+add_library(exchange_server::server_lib ALIAS server_lib)
+
+add_executable(server main.cpp)
+
+target_link_libraries(
+  server
+  PUBLIC exchange_server::server_lib exchange_server::project_options exchange_server::project_warnings
+  PRIVATE CLI11::CLI11 fmt::fmt spdlog::spdlog)
+
+target_include_directories(server PRIVATE "${CMAKE_BINARY_DIR}/configured_files/include")

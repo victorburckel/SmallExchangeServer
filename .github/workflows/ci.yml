@@ -35,7 +35,6 @@ jobs:
         compiler:
           # you can specify the version after `-` like "llvm-13.0.0".
           - llvm-13.0.0
-          - gcc
         generator:
           - "Ninja Multi-Config"
         build_type:

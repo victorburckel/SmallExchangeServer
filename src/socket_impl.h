@@ -19,8 +19,8 @@ public:
   auto get_fd() const { return _fd; }
 
 private:
-  const int _fd;
-  const int _maxConnections{ 128 };
+  int _fd;
+  static constexpr int _max_connections{ 128 };
 };
 
 }

@@ -166,7 +166,8 @@ endif()
 # we know we want to ship
 package_project(
   TARGETS
-  intro
+  server
+  server_lib
   project_options
   project_warnings
   # FIXME: this does not work! CK

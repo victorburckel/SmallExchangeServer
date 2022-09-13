@@ -1,14 +1,21 @@
+#include "order.h"
 #include <catch2/catch.hpp>
 
-unsigned int Factorial(unsigned int number)// NOLINT(misc-no-recursion)
+TEST_CASE("Can parse order", "[orders]")
 {
-  return number <= 1 ? number : Factorial(number - 1) * number;
-}
+  constexpr auto message =
+    "1234"
+    " BTCUSDT"
+    "+"
+    "0010"
+    "00010000";
 
-TEST_CASE("Factorials are computed", "[factorial]")
-{
-  REQUIRE(Factorial(1) == 1);
-  REQUIRE(Factorial(2) == 2);
-  REQUIRE(Factorial(3) == 6);
-  REQUIRE(Factorial(10) == 3628800);
+  const auto order = exchange_server::parse_order(message);
+
+  REQUIRE(order.has_value());
+  CHECK(order->id == "1234");
+  CHECK(order->symbol == " BTCUSDT");
+  CHECK(order->way == exchange_server::order_side::buy);
+  CHECK(order->quantity == 10U);
+  CHECK(order->price == 10'000);
 }

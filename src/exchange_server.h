@@ -21,12 +21,14 @@ private:
   void on_read(int fd);
   void on_write(int fd);
 
-  struct ClientData;
+  struct client_data;
+
+  static void on_client_message(const std::string &message, client_data &);
 
   std::shared_ptr<worker> _worker;
   exchange_server::listen_socket_impl _listener;
   exchange_server::epoll_impl _epoll;
-  std::unordered_map<int, std::shared_ptr<ClientData>> _clientData;
+  std::unordered_map<int, std::shared_ptr<client_data>> _client_data;
 };
 
 }

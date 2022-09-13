@@ -39,7 +39,7 @@ int main(int argc, const char **argv)
     exchange_server::server server{ port, worker };
 
     // Should use jthread
-    std::thread runner{ [worker]() { worker->run(); } };
+    std::thread runner{ [worker] { worker->run(); } };
     exchange_server::scope_exit guard{ [&runner] { runner.join(); } };
 
     server.run();

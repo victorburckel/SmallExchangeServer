@@ -46,7 +46,7 @@ listen_socket_impl::listen_socket_impl(int port) : _fd{ ::socket(AF_INET, SOCK_S
     throw std::runtime_error{ fmt::format("Error binding socket: {}", get_last_error()) };
   }
 
-  if (::listen(_fd, _maxConnections) < 0) {
+  if (::listen(_fd, _max_connections) < 0) {
     throw std::runtime_error{ fmt::format("Error listening: {}", get_last_error()) };
   }
 }
