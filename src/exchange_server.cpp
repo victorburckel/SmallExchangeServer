@@ -31,16 +31,25 @@ struct server::client_data
 
   std::error_code write(std::string_view message)
   {
+    bool was_empty = _write_buffer.empty();
     _write_buffer.insert(_write_buffer.end(), message.begin(), message.end());
-    if (std::exchange(_ready_to_write, false))
+    if (was_empty || message.empty())
     {
       auto [bytes_written, err] = _sock.write(_write_buffer);
-      if (err) { return err; }
 
-      _write_buffer.erase(_write_buffer.begin(), _write_buffer.begin() + *bytes_written);
-      if (!_write_buffer.empty())
+      if (!err) { _write_buffer.erase(_write_buffer.begin(), _write_buffer.begin() + *bytes_written); }
+
+      const auto add_write = !_write_buffer.empty() && was_empty;
+      const auto remove_write = _write_buffer.empty() && !was_empty;
+      if (add_write || remove_write)
       {
-        if (const auto epoll = _epoll.lock()) { epoll->modify(_sock.get_fd(), EPOLLIN | EPOLLOUT); }
+        if (const auto epoll = _epoll.lock())
+        {
+          std::uint32_t flags = EPOLLIN;
+          if (add_write) { flags &= EPOLLOUT; }
+
+          epoll->modify(_sock.get_fd(), flags);
+        }
       }
     }
 
@@ -78,7 +87,6 @@ private:
   socket_impl _sock;
   std::weak_ptr<epoll_impl> _epoll;
 
-  bool _ready_to_write{ true };
   std::vector<char> _write_buffer;
 
   std::array<char, 1024> _temp_read_buffer{};
@@ -113,7 +121,7 @@ void server::run()
       }
       else if ((evt.events & EPOLLOUT) != 0U)
       {
-        spdlog::error("Writing not implemented");
+        on_write(evt.data.fd);
       }
       else
       {
@@ -137,13 +145,7 @@ void server::on_connect()
 void server::on_read(int fd)
 {
   auto client_data_it = _client_data.find(fd);
-  if (client_data_it == _client_data.end())
-  {
-    spdlog::error("Unknown client {}", fd);
-
-    // Try to close the unkown descriptor
-    socket_impl{ fd };
-  }
+  if (client_data_it == _client_data.end()) { throw std::runtime_error{ fmt::format("Unknown client {}", fd) }; }
 
   const auto client_data = client_data_it->second;
 
@@ -165,6 +167,15 @@ void server::on_read(int fd)
       on_client_message(message, *client_data, *state);
     });
   }
+}
+
+void server::on_write(int fd)
+{
+  auto client_data_it = _client_data.find(fd);
+  if (client_data_it == _client_data.end()) { throw std::runtime_error{ fmt::format("Unknown client {}", fd) }; }
+
+  const auto client_data = client_data_it->second;
+  client_data->write("");
 }
 
 namespace {
