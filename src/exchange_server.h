@@ -22,13 +22,18 @@ private:
   void on_write(int fd);
 
   struct client_data;
+  struct state;
 
-  static void on_client_message(const std::string &message, client_data &);
+  static void on_client_message(const std::string &message, client_data &client_data, state &state);
+  static void on_client_id(std::string_view id_message, client_data &client_data);
+  static void on_client_order(std::string_view order_message, client_data &client_data, state &state);
+  static void on_client_cancel(std::string_view cancel_message, client_data &client_data);
 
   std::shared_ptr<worker> _worker;
   exchange_server::listen_socket_impl _listener;
   exchange_server::epoll_impl _epoll;
   std::unordered_map<int, std::shared_ptr<client_data>> _client_data;
+  std::shared_ptr<state> _state;
 };
 
 }

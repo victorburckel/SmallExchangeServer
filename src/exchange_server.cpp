@@ -5,8 +5,14 @@
 #include <spdlog/spdlog.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <unordered_set>
 
 namespace exchange_server {
+
+struct server::state
+{
+  std::unordered_set<std::string> known_symbols;
+};
 
 enum class client_state { connected, identified };
 
@@ -15,9 +21,11 @@ struct server::client_data
   client_state state{ client_state::connected };
   std::string name{ "unidentified" };
   std::vector<char> buffer;
+  std::unordered_map<std::string, order> outstanding_orders;
 };
 
-server::server(int port, std::shared_ptr<worker> worker) : _worker{ std::move(worker) }, _listener{ port }
+server::server(int port, std::shared_ptr<worker> worker)
+  : _worker{ std::move(worker) }, _listener{ port }, _state{ std::make_shared<state>() }
 {
   spdlog::info("Starting server on port {}", port);
   _epoll.add(_listener.get_fd(), EPOLLIN);
@@ -90,8 +98,8 @@ void server::on_read(int fd)
   auto it = std::find_if(client_data->buffer.begin(), client_data->buffer.end(), is_eol);
   if (it != client_data->buffer.end())
   {
-    _worker->post([this, message = std::string{ client_data->buffer.begin(), it }, client_data] {
-      on_client_message(message, *client_data);
+    _worker->post([message = std::string{ client_data->buffer.begin(), it }, client_data, state = _state] {
+      on_client_message(message, *client_data, *state);
     });
 
     client_data->buffer.erase(
@@ -100,41 +108,98 @@ void server::on_read(int fd)
 }
 
 namespace {
-
+  constexpr std::string_view id_prefix{ "id" };
   constexpr std::string_view order_prefix{ "order" };
+  constexpr std::string_view cancel_prefix{ "cancel" };
 }
 
-void server::on_client_message(const std::string &message, client_data &client_data)
+void server::on_client_message(const std::string &message, client_data &client_data, state &state)
 {
   spdlog::trace("Processing message: {}", message);
 
-  if (message.starts_with("id"))
+  if (message.starts_with(id_prefix))
   {
-    client_data.name = message.substr(2);
-    client_data.state = client_state::identified;
-    spdlog::info("Client authentified as {}", client_data.name);
+    on_client_id(std::string_view{ message }.substr(id_prefix.size()), client_data);
   }
   else if (message.starts_with(order_prefix))
   {
-    const auto order_message = std::string_view{ message }.substr(order_prefix.size());
-    if (auto order = parse_order(order_message); order && client_data.state == client_state::identified)
+    on_client_order(std::string_view{ message }.substr(order_prefix.size()), client_data, state);
+  }
+  else if (message.starts_with(cancel_prefix))
+  {
+    on_client_cancel(std::string_view{ message }.substr(cancel_prefix.size()), client_data);
+  }
+  else
+  {
+    spdlog::error("Unhandled message: {}", message);
+  }
+}
+
+
+void server::on_client_id(std::string_view id_message, client_data &client_data)
+{
+  client_data.name = std::string{ id_message };
+  client_data.state = client_state::identified;
+  spdlog::info("Client authentified as {}", client_data.name);
+}
+
+void server::on_client_order(std::string_view order_message, client_data &client_data, state &state)
+{
+  if (auto order = parse_order(order_message); order && client_data.state == client_state::identified)
+  {
+    const auto it = client_data.outstanding_orders.find(order->id);
+    if (it == client_data.outstanding_orders.end())
     {
-      spdlog::info("Received order {} from client: {} {}{}@{}",
+      spdlog::info("Received new order {} from client: {} {}{}@{}",
         order->id,
         magic_enum::enum_name(order->way),
         order->quantity,
         order->symbol,
         order->price);
-    }
-    else if (client_data.state != client_state::identified)
-    {
-      spdlog::error("Received order \"{}\" from unidentified client", order_message);
+
+      if (state.known_symbols.insert(order->symbol).second) { spdlog::info("Added new symbol {}", order->symbol); }
+      client_data.outstanding_orders.insert(std::pair{ order->id, std::move(*order) });
     }
     else
     {
-      spdlog::error("Received invalid order \"{}\" from {}", order_message, client_data.name);
+      if (order->way != it->second.way || order->symbol != it->second.symbol)
+      {
+        spdlog::error("Error updating order {} from client: can only update price or quantity", order->id);
+      }
+      else
+      {
+        spdlog::info("Received update order {} from client: {} {}{}@{}",
+          order->id,
+          magic_enum::enum_name(order->way),
+          order->quantity,
+          order->symbol,
+          order->price);
+
+        it->second = *order;
+      }
     }
+  }
+  else if (client_data.state != client_state::identified)
+  {
+    spdlog::error("Received order \"{}\" from unidentified client", order_message);
+  }
+  else
+  {
+    spdlog::error("Received invalid order \"{}\" from {}", order_message, client_data.name);
   }
 }
 
+void server::on_client_cancel(std::string_view cancel_message, client_data &client_data)
+{
+  const auto it = client_data.outstanding_orders.find(std::string{ cancel_message });
+  if (it != client_data.outstanding_orders.end())
+  {
+    spdlog::info("Cancelling order {} from client {}", cancel_message, client_data.name);
+    client_data.outstanding_orders.erase(it);
+  }
+  else
+  {
+    spdlog::error("Unknwon order {} cancel received from client {}", cancel_message, client_data.name);
+  }
+}
 }
