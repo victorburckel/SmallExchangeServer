@@ -41,5 +41,6 @@ void worker::stop()
 
   std::scoped_lock l{ _mutex };
   _stop_requested = true;
+  _condition.notify_all();
 }
 }

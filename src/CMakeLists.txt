@@ -1,6 +1,7 @@
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
+find_package(magic_enum CONFIG REQUIRED)
 
 add_library(
   server_lib SHARED
@@ -24,7 +25,10 @@ target_include_directories(server_lib PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_S
 target_link_libraries(
   server_lib
   PUBLIC exchange_server::project_options exchange_server::project_warnings
-  PRIVATE CLI11::CLI11 fmt::fmt spdlog::spdlog)
+  PRIVATE CLI11::CLI11
+          fmt::fmt
+          spdlog::spdlog
+          magic_enum::magic_enum)
 
 add_library(exchange_server::server_lib ALIAS server_lib)
 
