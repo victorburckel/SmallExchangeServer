@@ -1,5 +1,7 @@
 #include "exchange_server.h"
+#include "epoll_impl.h"
 #include "order.h"
+#include "socket_impl.h"
 #include "worker.h"
 #include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
@@ -18,7 +20,7 @@ enum class client_state { connected, identified };
 
 struct server::client_data
 {
-  explicit client_data(socket_impl sock, std::weak_ptr<epoll_impl> epoll)
+  explicit client_data(std::shared_ptr<socket_interface> sock, std::weak_ptr<epoll_interface> epoll)
     : _sock{ std::move(sock) }, _epoll{ std::move(epoll) }
   {}
 
@@ -35,9 +37,9 @@ struct server::client_data
     _write_buffer.insert(_write_buffer.end(), message.begin(), message.end());
     if (was_empty || message.empty())
     {
-      auto [bytes_written, err] = _sock.write(_write_buffer);
+      auto [bytes_written, err] = _sock->write(_write_buffer);
 
-      if (!err) { _write_buffer.erase(_write_buffer.begin(), _write_buffer.begin() + *bytes_written); }
+      if (!err) { _write_buffer.erase(_write_buffer.begin(), _write_buffer.begin() + bytes_written); }
 
       const auto add_write = !_write_buffer.empty() && was_empty;
       const auto remove_write = _write_buffer.empty() && !was_empty;
@@ -48,7 +50,7 @@ struct server::client_data
           std::uint32_t flags = EPOLLIN;
           if (add_write) { flags &= EPOLLOUT; }
 
-          epoll->modify(_sock.get_fd(), flags);
+          epoll->modify(_sock->get_fd(), flags);
         }
       }
     }
@@ -56,16 +58,16 @@ struct server::client_data
     return {};
   }
 
-  result<std::string> read()
+  result<std::optional<std::string>> read()
   {
-    auto [bytes_read, err] = _sock.read(_temp_read_buffer);
+    auto [bytes_read, err] = _sock->read(_temp_read_buffer);
     if (err) { return { .err = err }; }
-    else if (*bytes_read == 0)
+    else if (bytes_read == 0)
     {
       return {};
     }
 
-    const auto data = std::string_view{ _temp_read_buffer.data(), static_cast<size_t>(*bytes_read) };
+    const auto data = std::string_view{ _temp_read_buffer.data(), static_cast<size_t>(bytes_read) };
 
     spdlog::trace("Received data: {}", data);
 
@@ -84,8 +86,8 @@ struct server::client_data
   }
 
 private:
-  socket_impl _sock;
-  std::weak_ptr<epoll_impl> _epoll;
+  std::shared_ptr<socket_interface> _sock;
+  std::weak_ptr<epoll_interface> _epoll;
 
   std::vector<char> _write_buffer;
 
@@ -93,14 +95,15 @@ private:
   std::vector<char> _read_buffer;
 };
 
-server::server(int port, std::shared_ptr<worker> worker)
+server::server(std::shared_ptr<listen_socket_interface> listener,
+  std::shared_ptr<epoll_interface> epoll,
+  std::shared_ptr<worker_interface> worker)
   : _worker{ std::move(worker) },
-    _listener{ port },
-    _epoll{ std::make_shared<epoll_impl>() },
+    _listener{ std::move(listener) },
+    _epoll{ std::move(epoll) },
     _state{ std::make_shared<state>() }
 {
-  spdlog::info("Starting server on port {}", port);
-  _epoll->add(_listener.get_fd(), EPOLLIN);
+  _epoll->add(_listener->get_fd(), EPOLLIN);
 }
 
 void server::run()
@@ -111,7 +114,7 @@ void server::run()
     for (const auto &evt : events)
     {
       if ((evt.events & EPOLLERR) != 0U) { throw std::runtime_error{ "Error in epoll::wait" }; }
-      else if (evt.data.fd == _listener.get_fd())
+      else if (evt.data.fd == _listener->get_fd())
       {
         on_connect();
       }
@@ -133,12 +136,12 @@ void server::run()
 
 void server::on_connect()
 {
-  auto [client_fd, err] = _listener.accept();
+  auto [client_fd, err] = _listener->accept();
   if (client_fd)
   {
     auto fd = client_fd->get_fd();
     _epoll->add(fd, EPOLLIN);
-    _client_data[fd] = std::make_shared<client_data>(std::move(*client_fd), _epoll);
+    _client_data[fd] = std::make_shared<client_data>(std::move(client_fd), _epoll);
   }
 }
 

@@ -1,5 +1,7 @@
+#include "epoll_impl.h"
 #include "exchange_server.h"
 #include "scope_exit.h"
+#include "socket_impl.h"
 #include "worker.h"
 
 #include <CLI/CLI.hpp>
@@ -34,8 +36,13 @@ int main(int argc, const char **argv)
       return EXIT_SUCCESS;
     }
 
+    spdlog::info("Starting server on port {}", port);
+
     auto worker = std::make_shared<exchange_server::worker>();
-    exchange_server::server server{ port, worker };
+
+    exchange_server::server server{ std::make_shared<exchange_server::listen_socket_impl>(port),
+      std::make_shared<exchange_server::epoll_impl>(),
+      worker };
 
     // Should use jthread
     std::thread runner{ [worker] { worker->run(); } };

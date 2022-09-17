@@ -85,7 +85,7 @@ listen_socket_impl::listen_socket_impl(int port) : socket_impl_base{ ::socket(AF
   if (::listen(_fd, _max_connections) < 0) { throw std::system_error{ get_last_error() }; }
 }
 
-result<socket_impl> listen_socket_impl::accept() const
+result<std::shared_ptr<socket_interface>> listen_socket_impl::accept() const
 {
   struct sockaddr_in client_addr = {};
   auto len = socklen_t{ sizeof(client_addr) };
@@ -94,11 +94,11 @@ result<socket_impl> listen_socket_impl::accept() const
   const auto fd = ::accept(_fd, (struct sockaddr *)&client_addr, &len);
   if (fd < 0) { return { .err = get_last_error() }; }
 
-  auto result = socket_impl{ fd };
-  if (const auto err = result.make_non_blocking()) { return { .err = err }; }
+  auto result = std::make_shared<socket_impl>(fd);
+  if (const auto err = result->make_non_blocking()) { return { .err = err }; }
 
   log_client_address(client_addr, len);
 
-  return { .result = std::optional{ std::move(result) } };
+  return { .result = std::move(result) };
 }
 }

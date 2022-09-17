@@ -5,7 +5,16 @@
 #include <mutex>
 
 namespace exchange_server {
-class worker
+
+class worker_interface
+{
+public:
+  virtual ~worker_interface() = default;
+
+  virtual void post(std::function<void()> work) = 0;
+};
+
+class worker : public worker_interface
 {
 public:
   worker() = default;
@@ -16,7 +25,7 @@ public:
   ~worker();
 
   void run();
-  void post(std::function<void()> work);
+  void post(std::function<void()> work) override;
   void stop();
 
 private:
