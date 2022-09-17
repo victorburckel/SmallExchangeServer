@@ -16,7 +16,8 @@
 
 int main(int argc, const char **argv)
 {
-  try {
+  try
+  {
     CLI::App app{ fmt::format(
       "{} version {}", SmallExchangeServer::cmake::project_name, SmallExchangeServer::cmake::project_version) };
 
@@ -27,25 +28,27 @@ int main(int argc, const char **argv)
 
     CLI11_PARSE(app, argc, argv);
 
-    if (show_version) {
+    if (show_version)
+    {
       fmt::print("{}\n", SmallExchangeServer::cmake::project_version);
       return EXIT_SUCCESS;
     }
-
-    // Use the default logger (stdout, multi-threaded, colored)
-    spdlog::info("Starting server on port {}", port);
 
     auto worker = std::make_shared<exchange_server::worker>();
     exchange_server::server server{ port, worker };
 
     // Should use jthread
     std::thread runner{ [worker] { worker->run(); } };
-    exchange_server::scope_exit guard{ [&runner] { runner.join(); } };
+    exchange_server::scope_exit guard{ [&runner, worker]() {
+      worker->stop();
+      runner.join();
+    } };
 
     server.run();
 
     spdlog::info("Closing server");
-  } catch (const std::exception &e) {
+  } catch (const std::exception &e)
+  {
     spdlog::error("Unhandled exception in main: {}", e.what());
   }
 }

@@ -3,7 +3,7 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 
 add_library(
-  server_lib
+  server_lib SHARED
   epoll_impl.cpp
   epoll_impl.h
   exchange_server.cpp

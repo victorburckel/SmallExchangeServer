@@ -21,14 +21,16 @@ void epoll_impl::add(int fd, std::uint32_t events) const
     .events = events, .data = {.fd = fd }
   };
 
-  if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &evt) < 0) {
+  if (epoll_ctl(_fd, EPOLL_CTL_ADD, fd, &evt) < 0)
+  {
     throw std::runtime_error{ fmt::format("Error adding file descriptor to epoll: {}", get_last_error()) };
   }
 }
 
 void epoll_impl::remove(int fd) const
 {
-  if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, nullptr) < 0) {
+  if (epoll_ctl(_fd, EPOLL_CTL_DEL, fd, nullptr) < 0)
+  {
     throw std::runtime_error{ fmt::format("Error removing file descriptor from epoll: {}", get_last_error()) };
   }
 }
@@ -36,7 +38,8 @@ void epoll_impl::remove(int fd) const
 std::span<epoll_event> epoll_impl::wait()
 {
   int result = epoll_wait(_fd, _events.data(), static_cast<int>(_events.size()), -1);
-  if (result < 0) {
+  if (result < 0)
+  {
     throw std::runtime_error{ fmt::format("Error removing file descriptor from epoll: {}", get_last_error()) };
   }
 
