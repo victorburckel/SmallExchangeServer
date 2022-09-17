@@ -18,27 +18,88 @@ enum class client_state { connected, identified };
 
 struct server::client_data
 {
-  explicit client_data(socket_impl sock) : sock{ std::move(sock) } {}
+  explicit client_data(socket_impl sock, std::weak_ptr<epoll_impl> epoll)
+    : _sock{ std::move(sock) }, _epoll{ std::move(epoll) }
+  {}
 
-  socket_impl sock;
+
   client_state state{ client_state::connected };
   std::string name{ "unidentified" };
-  std::vector<char> buffer;
+
+
   std::unordered_map<std::string, order> outstanding_orders;
+
+  std::error_code write(std::string_view message)
+  {
+    _write_buffer.insert(_write_buffer.end(), message.begin(), message.end());
+    if (std::exchange(_ready_to_write, false))
+    {
+      auto [bytes_written, err] = _sock.write(_write_buffer);
+      if (err) { return err; }
+
+      _write_buffer.erase(_write_buffer.begin(), _write_buffer.begin() + *bytes_written);
+      if (!_write_buffer.empty())
+      {
+        if (const auto epoll = _epoll.lock()) { epoll->modify(_sock.get_fd(), EPOLLIN | EPOLLOUT); }
+      }
+    }
+
+    return {};
+  }
+
+  result<std::string> read()
+  {
+    auto [bytes_read, err] = _sock.read(_temp_read_buffer);
+    if (err) { return { .err = err }; }
+    else if (*bytes_read == 0)
+    {
+      return {};
+    }
+
+    const auto data = std::string_view{ _temp_read_buffer.data(), static_cast<size_t>(*bytes_read) };
+
+    spdlog::trace("Received data: {}", data);
+
+    _read_buffer.insert(_read_buffer.end(), data.begin(), data.end());
+
+    const auto is_eol = [](char c) { return c == '\n' || c == '\r'; };
+    auto it = std::find_if(_read_buffer.begin(), _read_buffer.end(), is_eol);
+    if (it != _read_buffer.end())
+    {
+      auto message = std::string{ _read_buffer.begin(), it };
+      _read_buffer.erase(_read_buffer.begin(), std::find_if(++it, _read_buffer.end(), std::not_fn(is_eol)));
+      return { .result = std::move(message) };
+    }
+
+    return { .result = "" };
+  }
+
+private:
+  socket_impl _sock;
+  std::weak_ptr<epoll_impl> _epoll;
+
+  bool _ready_to_write{ true };
+  std::vector<char> _write_buffer;
+
+  std::array<char, 1024> _temp_read_buffer{};
+  std::vector<char> _read_buffer;
 };
 
 server::server(int port, std::shared_ptr<worker> worker)
-  : _worker{ std::move(worker) }, _listener{ port }, _state{ std::make_shared<state>() }
+  : _worker{ std::move(worker) },
+    _listener{ port },
+    _epoll{ std::make_shared<epoll_impl>() },
+    _state{ std::make_shared<state>() }
 {
   spdlog::info("Starting server on port {}", port);
-  _epoll.add(_listener.get_fd(), EPOLLIN);
+  _epoll->add(_listener.get_fd(), EPOLLIN);
 }
 
 void server::run()
 {
   for (;;)
   {
-    const auto events = _epoll.wait();
+    const auto events = _epoll->wait();
     for (const auto &evt : events)
     {
       if ((evt.events & EPOLLERR) != 0U) { throw std::runtime_error{ "Error in epoll::wait" }; }
@@ -50,6 +111,10 @@ void server::run()
       {
         on_read(evt.data.fd);
       }
+      else if ((evt.events & EPOLLOUT) != 0U)
+      {
+        spdlog::error("Writing not implemented");
+      }
       else
       {
         spdlog::error("Unhandled event {}", evt.events);
@@ -60,12 +125,12 @@ void server::run()
 
 void server::on_connect()
 {
-  auto client_fd = _listener.accept();
+  auto [client_fd, err] = _listener.accept();
   if (client_fd)
   {
     auto fd = client_fd->get_fd();
-    _epoll.add(fd, EPOLLIN);
-    _client_data[fd] = std::make_shared<client_data>(std::move(*client_fd));
+    _epoll->add(fd, EPOLLIN);
+    _client_data[fd] = std::make_shared<client_data>(std::move(*client_fd), _epoll);
   }
 }
 
@@ -82,36 +147,23 @@ void server::on_read(int fd)
 
   const auto client_data = client_data_it->second;
 
-  std::array<char, 1024> buffer{};
-  auto bytes_read = client_data->sock.read(buffer);
-  if (bytes_read < 0)
+  auto [message, err] = client_data->read();
+  if (err)
   {
     spdlog::error("Error while reading client message");
     return;
   }
-  else if (bytes_read == 0)
+  else if (!message)
   {
     spdlog::info("Client ({}) disconnected", client_data->name);
     _client_data.erase(fd);
     return;
   }
-
-  const auto message = std::string_view{ buffer.data(), static_cast<size_t>(bytes_read) };
-
-  spdlog::trace("Received message: {}", message);
-
-  client_data->buffer.insert(client_data->buffer.end(), message.begin(), message.end());
-
-  const auto is_eol = [](char c) { return c == '\n' || c == '\r'; };
-  auto it = std::find_if(client_data->buffer.begin(), client_data->buffer.end(), is_eol);
-  if (it != client_data->buffer.end())
+  else if (!message->empty())
   {
-    _worker->post([message = std::string{ client_data->buffer.begin(), it }, client_data, state = _state] {
+    _worker->post([message = std::move(*message), client_data, state = _state] {
       on_client_message(message, *client_data, *state);
     });
-
-    client_data->buffer.erase(
-      client_data->buffer.begin(), std::find_if(++it, client_data->buffer.end(), std::not_fn(is_eol)));
   }
 }
 
@@ -167,6 +219,8 @@ void server::on_client_order(std::string_view order_message, client_data &client
 
       if (state.known_symbols.insert(order->symbol).second) { spdlog::info("Added new symbol {}", order->symbol); }
       client_data.outstanding_orders.insert(std::pair{ order->id, std::move(*order) });
+
+      client_data.write("ok\n");
     }
     else
     {

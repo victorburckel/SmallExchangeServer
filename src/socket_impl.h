@@ -1,5 +1,7 @@
 #pragma once
 
+#include "result.h"
+
 #include <optional>
 #include <span>
 
@@ -19,7 +21,7 @@ public:
   }
   ~socket_impl_base();
 
-  bool make_non_blocking() const;
+  std::error_code make_non_blocking() const;
 
   auto get_fd() const { return _fd; }
 
@@ -32,7 +34,8 @@ class socket_impl : public socket_impl_base
 public:
   using socket_impl_base::socket_impl_base;
 
-  std::ptrdiff_t read(std::span<char> buffer);
+  result<std::ptrdiff_t> read(std::span<char> buffer);
+  result<std::ptrdiff_t> write(std::span<const char> buffer);
 };
 
 class listen_socket_impl : public socket_impl_base
@@ -40,7 +43,7 @@ class listen_socket_impl : public socket_impl_base
 public:
   explicit listen_socket_impl(int port);
 
-  std::optional<socket_impl> accept() const;
+  result<socket_impl> accept() const;
 
 private:
   static constexpr int _max_connections{ 128 };

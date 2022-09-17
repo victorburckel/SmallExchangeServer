@@ -31,7 +31,7 @@ private:
 
   std::shared_ptr<worker> _worker;
   exchange_server::listen_socket_impl _listener;
-  exchange_server::epoll_impl _epoll;
+  std::shared_ptr<exchange_server::epoll_impl> _epoll;
   std::unordered_map<int, std::shared_ptr<client_data>> _client_data;
   std::shared_ptr<state> _state;
 };

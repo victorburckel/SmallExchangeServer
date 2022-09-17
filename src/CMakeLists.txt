@@ -11,6 +11,8 @@ add_library(
   exchange_server.h
   order.cpp
   order.h
+  result.cpp
+  result.h
   scope_exit.cpp
   scope_exit.h
   socket_impl.cpp

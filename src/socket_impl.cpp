@@ -27,14 +27,13 @@ void log_client_address(const struct sockaddr_in &client_addr, socklen_t len)
     spdlog::info("Unknown client connected");
   }
 }
-
 }
 
 namespace exchange_server {
 
 socket_impl_base::socket_impl_base(int fd) : _fd{ fd }
 {
-  if (_fd < 0) { throw std::runtime_error{ fmt::format("Error opening socket: {}", get_last_error()) }; }
+  if (_fd < 0) { throw std::system_error{ get_last_error() }; }
 }
 
 socket_impl_base::~socket_impl_base()
@@ -42,26 +41,36 @@ socket_impl_base::~socket_impl_base()
   if (_fd >= 0) { ::close(_fd); }
 }
 
-bool socket_impl_base::make_non_blocking() const
+std::error_code socket_impl_base::make_non_blocking() const
 {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,hicpp-signed-bitwise)
-  if (fcntl(_fd, F_SETFL, fcntl(_fd, F_GETFL, 0) | O_NONBLOCK) < 0)
-  {
-    spdlog::error("Error updating socket to non blocking: {}", get_last_error());
-    return false;
-  }
+  if (fcntl(_fd, F_SETFL, fcntl(_fd, F_GETFL, 0) | O_NONBLOCK) < 0) { return get_last_error(); }
 
-  return true;
+  return {};
 }
 
-std::ptrdiff_t socket_impl::read(std::span<char> buffer) { return ::recv(_fd, buffer.data(), buffer.size(), 0); }
+result<std::ptrdiff_t> socket_impl::read(std::span<char> buffer)
+{
+  const auto bytes_read = ::recv(_fd, buffer.data(), buffer.size(), 0);
+  if (bytes_read < 0) { return { .err = std::make_error_code(static_cast<std::errc>(errno)) }; }
+
+  return { .result = bytes_read };
+}
+
+result<std::ptrdiff_t> socket_impl::write(std::span<const char> buffer)
+{
+  const auto bytes_written = ::send(_fd, buffer.data(), buffer.size(), 0);
+  if (bytes_written < 0) { return { .err = std::make_error_code(static_cast<std::errc>(errno)) }; }
+
+  return { .result = bytes_written };
+}
 
 listen_socket_impl::listen_socket_impl(int port) : socket_impl_base{ ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0) }
 {
   const int value = 1;
   if (::setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value)) < 0)
   {
-    throw std::runtime_error{ fmt::format("Error setting socket options: {}", get_last_error()) };
+    throw std::system_error{ get_last_error() };
   }
 
   struct sockaddr_in serv_addr = { .sin_family = AF_INET, .sin_port = htons(port) };
@@ -70,35 +79,26 @@ listen_socket_impl::listen_socket_impl(int port) : socket_impl_base{ ::socket(AF
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
   if (::bind(_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
   {
-    throw std::runtime_error{ fmt::format("Error binding socket: {}", get_last_error()) };
+    throw std::system_error{ get_last_error() };
   }
 
-  if (::listen(_fd, _max_connections) < 0)
-  {
-    throw std::runtime_error{ fmt::format("Error listening: {}", get_last_error()) };
-  }
+  if (::listen(_fd, _max_connections) < 0) { throw std::system_error{ get_last_error() }; }
 }
 
-std::optional<socket_impl> listen_socket_impl::accept() const
+result<socket_impl> listen_socket_impl::accept() const
 {
   struct sockaddr_in client_addr = {};
   auto len = socklen_t{ sizeof(client_addr) };
 
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
   const auto fd = ::accept(_fd, (struct sockaddr *)&client_addr, &len);
-  if (fd < 0)
-  {
-    if (errno != EAGAIN && errno != EWOULDBLOCK) { spdlog::info("Error in accept: {}", get_last_error()); }
-
-    return std::nullopt;
-  }
+  if (fd < 0) { return { .err = get_last_error() }; }
 
   auto result = socket_impl{ fd };
-  if (!result.make_non_blocking()) { return std::nullopt; }
+  if (const auto err = result.make_non_blocking()) { return { .err = err }; }
 
   log_client_address(client_addr, len);
 
-  return result;
+  return { .result = std::optional{ std::move(result) } };
 }
-
 }

@@ -19,6 +19,7 @@ public:
   ~epoll_impl();
 
   void add(int fd, std::uint32_t events) const;
+  void modify(int fd, std::uint32_t events) const;
   void remove(int fd) const;
 
   std::span<epoll_event> wait();
