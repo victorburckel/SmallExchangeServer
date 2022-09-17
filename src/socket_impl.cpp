@@ -32,10 +32,32 @@ void log_client_address(const struct sockaddr_in &client_addr, socklen_t len)
 
 namespace exchange_server {
 
-listen_socket_impl::listen_socket_impl(int port) : _fd{ ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0) }
+socket_impl_base::socket_impl_base(int fd) : _fd{ fd }
 {
   if (_fd < 0) { throw std::runtime_error{ fmt::format("Error opening socket: {}", get_last_error()) }; }
+}
 
+socket_impl_base::~socket_impl_base()
+{
+  if (_fd >= 0) { ::close(_fd); }
+}
+
+bool socket_impl_base::make_non_blocking() const
+{
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,hicpp-signed-bitwise)
+  if (fcntl(_fd, F_SETFL, fcntl(_fd, F_GETFL, 0) | O_NONBLOCK) < 0)
+  {
+    spdlog::error("Error updating socket to non blocking: {}", get_last_error());
+    return false;
+  }
+
+  return true;
+}
+
+std::ptrdiff_t socket_impl::read(std::span<char> buffer) { return ::recv(_fd, buffer.data(), buffer.size(), 0); }
+
+listen_socket_impl::listen_socket_impl(int port) : socket_impl_base{ ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0) }
+{
   const int value = 1;
   if (::setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value)) < 0)
   {
@@ -57,9 +79,7 @@ listen_socket_impl::listen_socket_impl(int port) : _fd{ ::socket(AF_INET, SOCK_S
   }
 }
 
-listen_socket_impl::~listen_socket_impl() { ::close(_fd); }
-
-std::optional<int> listen_socket_impl::accept() const
+std::optional<socket_impl> listen_socket_impl::accept() const
 {
   struct sockaddr_in client_addr = {};
   auto len = socklen_t{ sizeof(client_addr) };
@@ -73,17 +93,12 @@ std::optional<int> listen_socket_impl::accept() const
     return std::nullopt;
   }
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg,hicpp-vararg,hicpp-signed-bitwise)
-  if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) < 0)
-  {
-    spdlog::error("Error updating socket to non blocking: {}", get_last_error());
-    ::close(fd);
-    return std::nullopt;
-  }
+  auto result = socket_impl{ fd };
+  if (!result.make_non_blocking()) { return std::nullopt; }
 
   log_client_address(client_addr, len);
 
-  return fd;
+  return result;
 }
 
 }

@@ -1,26 +1,50 @@
 #pragma once
 
 #include <optional>
+#include <span>
 
 namespace exchange_server {
 
-class listen_socket_impl
+class socket_impl_base
 {
 public:
-  explicit listen_socket_impl(int port);
-  listen_socket_impl(const listen_socket_impl &) = delete;
-  listen_socket_impl(listen_socket_impl &&) noexcept = default;
-  listen_socket_impl &operator=(const listen_socket_impl &) = delete;
-  listen_socket_impl &operator=(listen_socket_impl &&) noexcept = default;
-  ~listen_socket_impl();
+  explicit socket_impl_base(int fd);
+  socket_impl_base(const socket_impl_base &) = delete;
+  socket_impl_base(socket_impl_base &&other) noexcept : _fd{ std::exchange(other._fd, -1) } {}
+  socket_impl_base &operator=(const socket_impl_base &) = delete;
+  socket_impl_base &operator=(socket_impl_base &&other) noexcept
+  {
+    _fd = std::exchange(other._fd, -1);
+    return *this;
+  }
+  ~socket_impl_base();
 
-  std::optional<int> accept() const;
+  bool make_non_blocking() const;
 
   auto get_fd() const { return _fd; }
 
-private:
+protected:
   int _fd;
+};
+
+class socket_impl : public socket_impl_base
+{
+public:
+  using socket_impl_base::socket_impl_base;
+
+  std::ptrdiff_t read(std::span<char> buffer);
+};
+
+class listen_socket_impl : public socket_impl_base
+{
+public:
+  explicit listen_socket_impl(int port);
+
+  std::optional<socket_impl> accept() const;
+
+private:
   static constexpr int _max_connections{ 128 };
 };
+
 
 }

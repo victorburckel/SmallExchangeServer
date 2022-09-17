@@ -18,6 +18,9 @@ enum class client_state { connected, identified };
 
 struct server::client_data
 {
+  explicit client_data(socket_impl sock) : sock{ std::move(sock) } {}
+
+  socket_impl sock;
   client_state state{ client_state::connected };
   std::string name{ "unidentified" };
   std::vector<char> buffer;
@@ -57,9 +60,13 @@ void server::run()
 
 void server::on_connect()
 {
-  const auto client_fd = _listener.accept();
-  if (client_fd) { _epoll.add(*client_fd, EPOLLIN); }
-  _client_data[*client_fd] = std::make_shared<client_data>();
+  auto client_fd = _listener.accept();
+  if (client_fd)
+  {
+    auto fd = client_fd->get_fd();
+    _epoll.add(fd, EPOLLIN);
+    _client_data[fd] = std::make_shared<client_data>(std::move(*client_fd));
+  }
 }
 
 void server::on_read(int fd)
@@ -68,12 +75,15 @@ void server::on_read(int fd)
   if (client_data_it == _client_data.end())
   {
     spdlog::error("Unknown client {}", fd);
-    ::close(fd);
+
+    // Try to close the unkown descriptor
+    socket_impl{ fd };
   }
+
   const auto client_data = client_data_it->second;
 
   std::array<char, 1024> buffer{};
-  auto bytes_read = ::recv(fd, buffer.data(), buffer.size(), 0);
+  auto bytes_read = client_data->sock.read(buffer);
   if (bytes_read < 0)
   {
     spdlog::error("Error while reading client message");
@@ -81,9 +91,7 @@ void server::on_read(int fd)
   }
   else if (bytes_read == 0)
   {
-
     spdlog::info("Client ({}) disconnected", client_data->name);
-    ::close(fd);
     _client_data.erase(fd);
     return;
   }
