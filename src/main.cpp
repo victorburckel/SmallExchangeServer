@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <memory>
+#include <sys/eventfd.h>
 #include <thread>
 
 // This file will be generated automatically when you run the CMake configuration step.
@@ -42,7 +43,8 @@ int main(int argc, const char **argv)
 
     exchange_server::server server{ std::make_shared<exchange_server::listen_socket_impl>(port),
       std::make_shared<exchange_server::epoll_impl>(),
-      worker };
+      worker,
+      std::make_shared<exchange_server::socket_impl>(eventfd(0, 0)) };
 
     // Should use jthread
     std::thread runner{ [worker] { worker->run(); } };

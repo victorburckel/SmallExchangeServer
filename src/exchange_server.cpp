@@ -97,23 +97,30 @@ private:
 
 server::server(std::shared_ptr<listen_socket_interface> listener,
   std::shared_ptr<epoll_interface> epoll,
-  std::shared_ptr<worker_interface> worker)
+  std::shared_ptr<worker_interface> worker,
+  std::shared_ptr<socket_interface> control)
   : _worker{ std::move(worker) },
     _listener{ std::move(listener) },
     _epoll{ std::move(epoll) },
+    _control{ std::move(control) },
     _state{ std::make_shared<state>() }
-{
-  _epoll->add(_listener->get_fd(), EPOLLIN);
-}
+{}
 
 void server::run()
 {
+  _epoll->add(_listener->get_fd(), EPOLLIN);
+  _epoll->add(_control->get_fd(), EPOLLIN);
+
   for (;;)
   {
     const auto events = _epoll->wait();
     for (const auto &evt : events)
     {
       if ((evt.events & EPOLLERR) != 0U) { throw std::runtime_error{ "Error in epoll::wait" }; }
+      else if (evt.data.fd == _control->get_fd())
+      {
+        on_control();
+      }
       else if (evt.data.fd == _listener->get_fd())
       {
         on_connect();
@@ -131,7 +138,20 @@ void server::run()
         spdlog::error("Unhandled event {}", evt.events);
       }
     }
+
+    if (events.empty() || _should_stop) { break; }
   }
+}
+
+void server::on_control()
+{
+  std::uint64_t evt{};
+
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  auto [bytes_read, err] = _control->read(std::span{ reinterpret_cast<char *>(&evt), sizeof(evt) });
+  if (err) { throw std::system_error{ err }; }
+
+  _should_stop = evt == 1;
 }
 
 void server::on_connect()

@@ -17,13 +17,9 @@ endif()
 
 # ---- Dependencies ----
 
-find_package(Catch2 CONFIG REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 
-include(Catch)
-
-add_library(catch_main OBJECT catch_main.cpp)
-target_link_libraries(catch_main PUBLIC Catch2::Catch2)
-target_link_libraries(catch_main PRIVATE exchange_server::project_options)
+include(GoogleTest)
 
 # Provide a simple smoke test to make sure that the CLI works and can display a --help message
 add_test(NAME cli.has_help COMMAND server --help)
@@ -35,25 +31,16 @@ add_test(NAME cli.has_help COMMAND server --help)
 add_test(NAME cli.version_matches COMMAND server --version)
 set_tests_properties(cli.version_matches PROPERTIES PASS_REGULAR_EXPRESSION "${PROJECT_VERSION}")
 
-add_executable(tests tests.cpp)
+add_executable(tests exchange_server_tests.cpp order_tests.cpp)
 target_link_libraries(
   tests
   PRIVATE exchange_server::server_lib
           exchange_server::project_warnings
           exchange_server::project_options
-          catch_main)
+          GTest::gtest
+          GTest::gtest_main
+          GTest::gmock)
 
 # automatically discover tests that are defined in catch based test files you can modify the unittests. Set TEST_PREFIX
 # to whatever you want, or use different for different binaries
-catch_discover_tests(
-  tests
-  TEST_PREFIX
-  "unittests."
-  REPORTER
-  xml
-  OUTPUT_DIR
-  .
-  OUTPUT_PREFIX
-  "unittests."
-  OUTPUT_SUFFIX
-  .xml)
+gtest_discover_tests(tests TEST_PREFIX "unittests." XML_OUTPUT_DIR .)
