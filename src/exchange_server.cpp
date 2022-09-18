@@ -197,7 +197,11 @@ void server::on_connect()
 void server::on_read(int fd)
 {
   auto client_data_it = _client_data.find(fd);
-  if (client_data_it == _client_data.end()) { throw std::runtime_error{ fmt::format("Unknown client {}", fd) }; }
+  if (client_data_it == _client_data.end())
+  {
+    spdlog::error("Unknown client {}", fd);
+    return;
+  }
 
   const auto client_data = client_data_it->second;
 
@@ -227,7 +231,11 @@ void server::on_read(int fd)
 void server::on_write(int fd)
 {
   auto client_data_it = _client_data.find(fd);
-  if (client_data_it == _client_data.end()) { throw std::runtime_error{ fmt::format("Unknown client {}", fd) }; }
+  if (client_data_it == _client_data.end())
+  {
+    spdlog::error("Unknown client {}", fd);
+    return;
+  }
 
   const auto client_data = client_data_it->second;
   client_data->message_queue.post([client_data] { client_data->write(""); });

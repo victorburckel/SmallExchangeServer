@@ -17,7 +17,9 @@ void market::run()
   for (;;)
   {
     auto delay = delay_dist(e);
-    std::this_thread::sleep_for(std::chrono::seconds{ delay });
+    // Sleep for makes clang-tidy crash because of spaceship operator
+    // https://bugs.llvm.org/show_bug.cgi?id=47511
+    std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::seconds{ delay });
 
     std::optional<decltype(_pending_orders)::value_type> execution;
     std::unique_lock l{ _mutex };
