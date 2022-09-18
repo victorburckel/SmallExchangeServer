@@ -16,23 +16,40 @@ namespace exchange_server {
 
 struct server::state
 {
-  std::unordered_set<std::string> known_symbols;
+  bool add_symbol(const std::string &symbol)
+  {
+    std::scoped_lock l{ _mutex };
+    return _known_symbols.insert(symbol).second;
+  }
+
+  std::vector<std::string> list_symbols() const
+  {
+    std::scoped_lock l{ _mutex };
+    return { _known_symbols.begin(), _known_symbols.end() };
+  }
+
+private:
+  std::unordered_set<std::string> _known_symbols;
+  mutable std::mutex _mutex;
 };
 
 enum class client_state { connected, identified };
 
 struct server::client_data
 {
-  explicit client_data(std::shared_ptr<socket_interface> sock, std::weak_ptr<epoll_interface> epoll)
-    : _sock{ std::move(sock) }, _epoll{ std::move(epoll) }
+  explicit client_data(std::shared_ptr<socket_interface> sock,
+    std::weak_ptr<epoll_interface> epoll,
+    worker_interface &worker)
+    : message_queue{ worker }, _sock{ std::move(sock) }, _epoll{ std::move(epoll) }
   {}
 
 
   client_state state{ client_state::connected };
   std::string name{ "unidentified" };
 
-
   std::unordered_map<std::string, order> outstanding_orders;
+  strand message_queue;
+
 
   std::error_code write(std::string_view message)
   {
@@ -170,7 +187,7 @@ void server::on_connect()
   {
     auto fd = client_fd->get_fd();
     _epoll->add(fd, EPOLLIN);
-    _client_data[fd] = std::make_shared<client_data>(std::move(client_fd), _epoll);
+    _client_data[fd] = std::make_shared<client_data>(std::move(client_fd), _epoll, *_worker);
   }
 }
 
@@ -197,7 +214,7 @@ void server::on_read(int fd)
   {
     for (auto &message : messages)
     {
-      _worker->post([message = std::move(message), client_data, state = _state] {
+      client_data->message_queue.post([message = std::move(message), client_data, state = _state] {
         on_client_message(message, *client_data, *state);
       });
     }
@@ -210,7 +227,7 @@ void server::on_write(int fd)
   if (client_data_it == _client_data.end()) { throw std::runtime_error{ fmt::format("Unknown client {}", fd) }; }
 
   const auto client_data = client_data_it->second;
-  client_data->write("");
+  client_data->message_queue.post([client_data] { client_data->write(""); });
 }
 
 namespace {
@@ -273,7 +290,7 @@ void server::on_client_order(std::string_view order_message, client_data &client
         order->symbol,
         order->price);
 
-      if (state.known_symbols.insert(order->symbol).second) { spdlog::info("Added new symbol {}", order->symbol); }
+      if (state.add_symbol(order->symbol)) { spdlog::info("Added new symbol {}", order->symbol); }
       client_data.outstanding_orders.insert(std::pair{ order->id, std::move(*order) });
 
       client_data.write("ok\n");
@@ -349,12 +366,13 @@ void server::on_client_list_orders(client_data &client_data)
   client_data.write(message);
 }
 
-void server::on_client_list_symbols(client_data &client_data, state &state)
+void server::on_client_list_symbols(client_data &client_data, const state &state)
 {
   spdlog::info("Received symbollist request from {}", client_data.name);
 
   std::ostringstream oss;
-  std::copy(state.known_symbols.begin(), state.known_symbols.end(), std::ostream_iterator<std::string>{ oss, "\n" });
+  auto known_symbols = state.list_symbols();
+  std::copy(known_symbols.begin(), known_symbols.end(), std::ostream_iterator<std::string>{ oss, "\n" });
 
   const auto message = oss.str();
 
