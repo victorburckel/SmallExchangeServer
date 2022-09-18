@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
 namespace {
 
 void log_client_address(const struct sockaddr_in &client_addr, socklen_t len)
@@ -16,7 +18,7 @@ void log_client_address(const struct sockaddr_in &client_addr, socklen_t len)
   std::array<char, NI_MAXHOST> hostname{};
   std::array<char, NI_MAXSERV> port{};
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast,clang-diagnostic-old-style-cast)
   if (getnameinfo((struct sockaddr *)&client_addr, len, hostname.data(), hostname.size(), port.data(), port.size(), 0)
       == 0)
   {
@@ -73,10 +75,10 @@ listen_socket_impl::listen_socket_impl(int port) : socket_impl_base{ ::socket(AF
     throw std::system_error{ get_last_error() };
   }
 
-  struct sockaddr_in serv_addr = { .sin_family = AF_INET, .sin_port = htons(port) };
+  struct sockaddr_in serv_addr = { .sin_family = AF_INET, .sin_port = htons(static_cast<uint16_t>(port)) };
   serv_addr.sin_addr.s_addr = INADDR_ANY;
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast,clang-diagnostic-old-style-cast)
   if (::bind(_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
   {
     throw std::system_error{ get_last_error() };
@@ -90,7 +92,7 @@ result<std::shared_ptr<socket_interface>> listen_socket_impl::accept() const
   struct sockaddr_in client_addr = {};
   auto len = socklen_t{ sizeof(client_addr) };
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast,clang-diagnostic-old-style-cast)
   const auto fd = ::accept(_fd, (struct sockaddr *)&client_addr, &len);
   if (fd < 0) { return { .err = get_last_error() }; }
 

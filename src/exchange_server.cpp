@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <unordered_set>
 
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
 namespace exchange_server {
 
 struct server::state

@@ -120,10 +120,11 @@ dynamic_project_options(
   --suppress=syntaxError
   --inconclusive)
 
+target_compile_options(project_warnings INTERFACE -Wno-missing-field-initializers -Wno-shadow)
 target_compile_features(project_options INTERFACE cxx_std_${CMAKE_CXX_STANDARD})
 # TODO: The INTERFACE library NAMESPACE ALIAS are missing! CK
-add_library(exchange_server::project_options INTERFACE IMPORTED)
-add_library(exchange_server::project_warnings INTERFACE IMPORTED)
+add_library(exchange_server::project_options ALIAS project_options)
+add_library(exchange_server::project_warnings ALIAS project_warnings)
 
 # configure files based on CMake configuration options
 add_subdirectory(configured_files)

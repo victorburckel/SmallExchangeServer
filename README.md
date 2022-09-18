@@ -4,10 +4,6 @@
 [![codecov](https://codecov.io/gh/victorburckel/SmallExchangeServer/branch/main/graph/badge.svg)](https://codecov.io/gh/victorburckel/SmallExchangeServer)
 [![CodeQL](https://github.com/victorburckel/SmallExchangeServer/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/victorburckel/SmallExchangeServer/actions/workflows/codeql-analysis.yml)
 
-LGTM Has to be set up manually after template is created:
-
-[![Language grade: C++](https://img.shields.io/lgtm/grade/cpp/github/victorburckel/SmallExchangeServer)](https://lgtm.com/projects/g/victorburckel/SmallExchangeServer/context:cpp)
-
 ## About SmallExchangeServer
 Small exchange server
 
