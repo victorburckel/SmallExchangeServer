@@ -31,7 +31,13 @@ add_test(NAME cli.has_help COMMAND server --help)
 add_test(NAME cli.version_matches COMMAND server --version)
 set_tests_properties(cli.version_matches PROPERTIES PASS_REGULAR_EXPRESSION "${PROJECT_VERSION}")
 
-add_executable(tests exchange_server_tests.cpp order_tests.cpp)
+add_executable(
+  tests
+  exchange_server_tests.cpp
+  mocks.cpp
+  mocks.h
+  order_tests.cpp
+  strand_tests.cpp)
 target_link_libraries(
   tests
   PRIVATE exchange_server::server_lib

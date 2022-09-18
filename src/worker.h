@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <queue>
 
 namespace exchange_server {
 
@@ -33,5 +34,21 @@ private:
   std::condition_variable _condition;
   std::vector<std::function<void()>> _pending;
   bool _stop_requested{};
+};
+
+class strand : public worker_interface
+{
+public:
+  explicit strand(worker_interface &worker) : _worker{ worker } {}
+  void post(std::function<void()> work) override;
+
+private:
+  void post_next();
+  void do_post(std::function<void()> work);
+
+  worker_interface &_worker;
+
+  std::mutex _mutex;
+  std::queue<std::function<void()>> _pending;
 };
 }
