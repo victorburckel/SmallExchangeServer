@@ -30,6 +30,7 @@ protected:
     worker = std::make_shared<StrictMock<mocks::worker>>();
     control = std::make_shared<StrictMock<mocks::socket>>();
     client = std::make_shared<StrictMock<mocks::socket>>();
+    market = std::make_shared<mocks::market>();
 
     EXPECT_CALL(*worker, post).WillRepeatedly([](const std::function<void()> &f) { f(); });
 
@@ -40,11 +41,12 @@ protected:
     EXPECT_CALL(*epoll, add(200, EPOLLIN));
   }
 
-  std::shared_ptr<StrictMock<mocks::listen_socket>> listen;
-  std::shared_ptr<StrictMock<mocks::epoll>> epoll;
-  std::shared_ptr<StrictMock<mocks::worker>> worker;
-  std::shared_ptr<StrictMock<mocks::socket>> control;
-  std::shared_ptr<StrictMock<mocks::socket>> client;
+  std::shared_ptr<mocks::listen_socket> listen;
+  std::shared_ptr<mocks::epoll> epoll;
+  std::shared_ptr<mocks::worker> worker;
+  std::shared_ptr<mocks::socket> control;
+  std::shared_ptr<mocks::socket> client;
+  std::shared_ptr<mocks::market> market;
 };
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cppcoreguidelines-owning-memory)
@@ -70,7 +72,7 @@ TEST_F(exchange_server_tests, can_process_order)
   EXPECT_CALL(*client, write(IsMessage("ok\n"sv)))
     .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 3 }));
 
-  exchange_server::server server{ listen, epoll, worker, control };
+  exchange_server::server server{ listen, epoll, worker, control, market };
   server.run();
 }
 
@@ -90,7 +92,7 @@ TEST_F(exchange_server_tests, handles_client_disconnection)
   // Client disconnects
   EXPECT_CALL(*client, read).WillOnce(expect_read(""));
 
-  exchange_server::server server{ listen, epoll, worker, control };
+  exchange_server::server server{ listen, epoll, worker, control, market };
   server.run();
 }
 
@@ -125,7 +127,7 @@ TEST_F(exchange_server_tests, handles_write_buffer_full)
     .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 2 }));
   EXPECT_CALL(*epoll, modify(300, EPOLLIN));
 
-  exchange_server::server server{ listen, epoll, worker, control };
+  exchange_server::server server{ listen, epoll, worker, control, market };
   server.run();
 }
 
@@ -148,7 +150,7 @@ TEST_F(exchange_server_tests, handle_multiple_messages_in_match)
   EXPECT_CALL(*client, write(IsMessage("ok\n"sv)))
     .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 3 }));
 
-  exchange_server::server server{ listen, epoll, worker, control };
+  exchange_server::server server{ listen, epoll, worker, control, market };
   server.run();
 }
 
@@ -181,7 +183,7 @@ TEST_F(exchange_server_tests, can_list_orders)
     .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 26 }));
 
 
-  exchange_server::server server{ listen, epoll, worker, control };
+  exchange_server::server server{ listen, epoll, worker, control, market };
   server.run();
 }
 
@@ -214,6 +216,6 @@ TEST_F(exchange_server_tests, can_list_symbols)
     .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 9 }));
 
 
-  exchange_server::server server{ listen, epoll, worker, control };
+  exchange_server::server server{ listen, epoll, worker, control, market };
   server.run();
 }

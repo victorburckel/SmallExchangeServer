@@ -1,5 +1,6 @@
 #include "exchange_server.h"
 #include "epoll_impl.h"
+#include "market.h"
 #include "order.h"
 #include "socket_impl.h"
 #include "worker.h"
@@ -124,11 +125,13 @@ private:
 server::server(std::shared_ptr<listen_socket_interface> listener,
   std::shared_ptr<epoll_interface> epoll,
   std::shared_ptr<worker_interface> worker,
-  std::shared_ptr<socket_interface> control)
+  std::shared_ptr<socket_interface> control,
+  std::shared_ptr<market_interface> market)
   : _worker{ std::move(worker) },
     _listener{ std::move(listener) },
     _epoll{ std::move(epoll) },
     _control{ std::move(control) },
+    _market{ std::move(market) },
     _state{ std::make_shared<state>() }
 {}
 
@@ -214,8 +217,8 @@ void server::on_read(int fd)
   {
     for (auto &message : messages)
     {
-      client_data->message_queue.post([message = std::move(message), client_data, state = _state] {
-        on_client_message(message, *client_data, *state);
+      client_data->message_queue.post([message = std::move(message), client_data, state = _state, market = _market] {
+        on_client_message(message, *client_data, *state, *market);
       });
     }
   }
@@ -236,9 +239,15 @@ namespace {
   constexpr std::string_view cancel_prefix{ "cancel" };
   constexpr std::string_view list_orders_message{ "listorders" };
   constexpr std::string_view list_symbols_message{ "listsymbols" };
+
+  constexpr std::string_view ok_message{ "ok\n" };
+  constexpr std::string_view reject_message{ "rejected\n" };
 }
 
-void server::on_client_message(const std::string &message, client_data &client_data, state &state)
+void server::on_client_message(const std::string &message,
+  client_data &client_data,
+  state &state,
+  market_interface &market)
 {
   spdlog::trace("Processing message: {}", message);
 
@@ -248,11 +257,11 @@ void server::on_client_message(const std::string &message, client_data &client_d
   }
   else if (message.starts_with(order_prefix))
   {
-    on_client_order(std::string_view{ message }.substr(order_prefix.size()), client_data, state);
+    on_client_order(std::string_view{ message }.substr(order_prefix.size()), client_data, state, market);
   }
   else if (message.starts_with(cancel_prefix))
   {
-    on_client_cancel(std::string_view{ message }.substr(cancel_prefix.size()), client_data);
+    on_client_cancel(std::string_view{ message }.substr(cancel_prefix.size()), client_data, market);
   }
   else if (message == list_orders_message)
   {
@@ -276,7 +285,10 @@ void server::on_client_id(std::string_view id_message, client_data &client_data)
   spdlog::info("Client authentified as {}", client_data.name);
 }
 
-void server::on_client_order(std::string_view order_message, client_data &client_data, state &state)
+void server::on_client_order(std::string_view order_message,
+  client_data &client_data,
+  state &state,
+  market_interface &market)
 {
   if (auto order = parse_order(order_message); order && client_data.state == client_state::identified)
   {
@@ -291,9 +303,17 @@ void server::on_client_order(std::string_view order_message, client_data &client
         order->price);
 
       if (state.add_symbol(order->symbol)) { spdlog::info("Added new symbol {}", order->symbol); }
+
+      market.add_order(*order, [&client_data, id = order->id]() {
+        client_data.message_queue.post([&client_data, id]() {
+          client_data.write(fmt::format("exec{}\n", id));
+          client_data.outstanding_orders.erase(id);
+        });
+      });
+
       client_data.outstanding_orders.insert(std::pair{ order->id, std::move(*order) });
 
-      client_data.write("ok\n");
+      client_data.write(ok_message);
     }
     else
     {
@@ -301,9 +321,9 @@ void server::on_client_order(std::string_view order_message, client_data &client
       {
         spdlog::error("Error updating order {} from client: can only update price or quantity", order->id);
 
-        client_data.write("reject\n");
+        client_data.write(reject_message);
       }
-      else
+      else if (market.update_order(*order))
       {
         spdlog::info("Received update order {} from client: {} {}{}@{}",
           order->id,
@@ -314,7 +334,12 @@ void server::on_client_order(std::string_view order_message, client_data &client
 
         it->second = *order;
 
-        client_data.write("ok\n");
+        client_data.write(ok_message);
+      }
+      else
+      {
+        spdlog::error("Error updating order {} from client: rejected by market", order->id);
+        client_data.write(reject_message);
       }
     }
   }
@@ -328,13 +353,23 @@ void server::on_client_order(std::string_view order_message, client_data &client
   }
 }
 
-void server::on_client_cancel(std::string_view cancel_message, client_data &client_data)
+void server::on_client_cancel(std::string_view cancel_message, client_data &client_data, market_interface &market)
 {
   const auto it = client_data.outstanding_orders.find(std::string{ cancel_message });
   if (it != client_data.outstanding_orders.end())
   {
-    spdlog::info("Cancelling order {} from client {}", cancel_message, client_data.name);
-    client_data.outstanding_orders.erase(it);
+    if (market.cancel_order(it->second.id))
+    {
+      spdlog::info("Cancelling order {} from client {}", cancel_message, client_data.name);
+      client_data.outstanding_orders.erase(it);
+
+      client_data.write(ok_message);
+    }
+    else
+    {
+      spdlog::info("Error cancelling order {} from client {}: rejected by market", cancel_message, client_data.name);
+      client_data.write(reject_message);
+    }
   }
   else
   {

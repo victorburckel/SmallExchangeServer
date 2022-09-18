@@ -118,6 +118,7 @@ dynamic_project_options(
   --suppress=unmatchedSuppression
   --suppress=passedByValue
   --suppress=syntaxError
+  --suppress=stlIfFind
   --inconclusive)
 
 target_compile_options(project_warnings INTERFACE -Wno-missing-field-initializers -Wno-shadow)

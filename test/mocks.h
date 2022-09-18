@@ -1,5 +1,6 @@
 #include "epoll_impl.h"
 #include "exchange_server.h"
+#include "market.h"
 #include "socket_impl.h"
 #include "worker.h"
 
@@ -42,6 +43,14 @@ public:
   MOCK_METHOD(exchange_server::result<std::ptrdiff_t>, write, (std::span<const char> buffer), (override));
 
   MOCK_METHOD(int, get_fd, (), (const, override));
+};
+
+class market : public exchange_server::market_interface
+{
+public:
+  MOCK_METHOD(void, add_order, (const exchange_server::order &order, std::function<void()> callback), (override));
+  MOCK_METHOD(bool, update_order, (const exchange_server::order &order), (override));
+  MOCK_METHOD(bool, cancel_order, (const std::string &id), (override));
 };
 
 }

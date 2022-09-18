@@ -1,5 +1,6 @@
 #include "epoll_impl.h"
 #include "exchange_server.h"
+#include "market.h"
 #include "scope_exit.h"
 #include "socket_impl.h"
 #include "worker.h"
@@ -40,17 +41,23 @@ int main(int argc, const char **argv)
     spdlog::info("Starting server on port {}", port);
 
     auto worker = std::make_shared<exchange_server::worker>();
+    auto market = std::make_shared<exchange_server::market>();
 
     exchange_server::server server{ std::make_shared<exchange_server::listen_socket_impl>(port),
       std::make_shared<exchange_server::epoll_impl>(),
       worker,
-      std::make_shared<exchange_server::socket_impl>(eventfd(0, 0)) };
+      std::make_shared<exchange_server::socket_impl>(eventfd(0, 0)),
+      market };
 
     // Should use jthread
-    std::thread runner{ [worker] { worker->run(); } };
-    exchange_server::scope_exit guard{ [&runner, worker]() {
+    std::thread worker_runner{ [worker] { worker->run(); } };
+    std::thread market_runner{ [market] { market->run(); } };
+
+    exchange_server::scope_exit guard{ [&]() {
       worker->stop();
-      runner.join();
+      worker_runner.join();
+      market->stop();
+      market_runner.join();
     } };
 
     server.run();

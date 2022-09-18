@@ -9,6 +9,8 @@ add_library(
   epoll_impl.h
   exchange_server.cpp
   exchange_server.h
+  market.cpp
+  market.h
   order.cpp
   order.h
   result.cpp

@@ -12,26 +12,26 @@ void worker::run()
 
   for (;;)
   {
-    decltype(_pending) pending;
-    bool stop_requested{};
+    decltype(_pending)::value_type work;
 
     {
       std::unique_lock l{ _mutex };
       _condition.wait(l, [this]() { return !_pending.empty() || _stop_requested; });
-      pending.swap(_pending);
-      stop_requested = _stop_requested;
+
+      if (_stop_requested) { break; }
+
+      work = _pending.front();
+      _pending.pop();
     }
 
-    if (stop_requested) { break; }
-
-    for (const auto &work : pending) { work(); }
+    work();
   }
 }
 
 void worker::post(std::function<void()> work)
 {
   std::scoped_lock l{ _mutex };
-  _pending.push_back(std::move(work));
+  _pending.push(std::move(work));
   _condition.notify_all();
 }
 

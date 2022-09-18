@@ -32,7 +32,7 @@ public:
 private:
   std::mutex _mutex;
   std::condition_variable _condition;
-  std::vector<std::function<void()>> _pending;
+  std::queue<std::function<void()>> _pending;
   bool _stop_requested{};
 };
 
