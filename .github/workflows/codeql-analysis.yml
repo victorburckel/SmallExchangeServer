@@ -64,24 +64,31 @@ jobs:
         developer_mode: ${{ matrix.developer_mode }}
         generator: ${{ matrix.generator }}
 
+    - name: Get Conan
+      uses: turtlebrowser/get-conan@v1.0
 
-    - name: Setup Cpp
-      uses: aminya/setup-cpp@v1
+    - name: Install ninja
+      run: sudo apt-get install ninja-build
+
+    - name: Install cppcheck
+      run: sudo apt-get install cppcheck
+
+    - name: Install gcovr
+      run: sudo pip install gcovr
+
+    - name: Set up GCC
+      if: ${{ matrix.compiler }} == 'gcc'
+      uses: egor-tensin/setup-gcc@v1
       with:
-        compiler: ${{ matrix.compiler }}
-        vcvarsall: ${{ contains(matrix.os, 'windows' )}}
+        version: 11
+        platform: x64
 
-        cmake: true
-        ninja: true
-        conan: true
-        vcpkg: false
-        ccache: true
-        clangtidy: false
-
-        cppcheck: false
-
-        gcovr: false
-        opencppcoverage: false
+    - name: Set up Clang
+      if: ${{ matrix.compiler }} == 'llvm'
+      uses: egor-tensin/setup-clang@v1
+      with:
+        version: 13
+        platform: x64
 
     - name: Cleanup Conan system packages (they are not properly cached)
       run: |
