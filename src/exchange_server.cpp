@@ -5,6 +5,7 @@
 #include "worker.h"
 #include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
+#include <sstream>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unordered_set>
@@ -216,6 +217,8 @@ namespace {
   constexpr std::string_view id_prefix{ "id" };
   constexpr std::string_view order_prefix{ "order" };
   constexpr std::string_view cancel_prefix{ "cancel" };
+  constexpr std::string_view list_orders_message{ "listorders" };
+  constexpr std::string_view list_symbols_message{ "listsymbols" };
 }
 
 void server::on_client_message(const std::string &message, client_data &client_data, state &state)
@@ -233,6 +236,14 @@ void server::on_client_message(const std::string &message, client_data &client_d
   else if (message.starts_with(cancel_prefix))
   {
     on_client_cancel(std::string_view{ message }.substr(cancel_prefix.size()), client_data);
+  }
+  else if (message == list_orders_message)
+  {
+    on_client_list_orders(client_data);
+  }
+  else if (message == list_symbols_message)
+  {
+    on_client_list_symbols(client_data, state);
   }
   else
   {
@@ -272,6 +283,8 @@ void server::on_client_order(std::string_view order_message, client_data &client
       if (order->way != it->second.way || order->symbol != it->second.symbol)
       {
         spdlog::error("Error updating order {} from client: can only update price or quantity", order->id);
+
+        client_data.write("reject\n");
       }
       else
       {
@@ -283,6 +296,8 @@ void server::on_client_order(std::string_view order_message, client_data &client
           order->price);
 
         it->second = *order;
+
+        client_data.write("ok\n");
       }
     }
   }
@@ -308,5 +323,42 @@ void server::on_client_cancel(std::string_view cancel_message, client_data &clie
   {
     spdlog::error("Unknwon order {} cancel received from client {}", cancel_message, client_data.name);
   }
+}
+
+void server::on_client_list_orders(client_data &client_data)
+{
+  spdlog::info("Received orderlist request from {}", client_data.name);
+
+  std::ostringstream oss;
+  std::transform(client_data.outstanding_orders.begin(),
+    client_data.outstanding_orders.end(),
+    std::ostream_iterator<std::string>{ oss, "\n" },
+    [](const auto &element) {
+      const auto &order = element.second;
+      return fmt::format("{: >4}{: >8}{}{:0>4}{:0>8.0f}",
+        order.id,
+        order.symbol,
+        order.way == order_side::buy ? '+' : '-',
+        order.quantity,
+        order.price);
+    });
+
+  const auto message = oss.str();
+
+  spdlog::trace("Sending orderlist response: {}", message);
+  client_data.write(message);
+}
+
+void server::on_client_list_symbols(client_data &client_data, state &state)
+{
+  spdlog::info("Received symbollist request from {}", client_data.name);
+
+  std::ostringstream oss;
+  std::copy(state.known_symbols.begin(), state.known_symbols.end(), std::ostream_iterator<std::string>{ oss, "\n" });
+
+  const auto message = oss.str();
+
+  spdlog::trace("Sending symbollist response: {}", message);
+  client_data.write(message);
 }
 }

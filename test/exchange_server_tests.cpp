@@ -196,3 +196,69 @@ TEST_F(exchange_server_tests, handle_multiple_messages_in_match)
   exchange_server::server server{ listen, epoll, worker, control };
   server.run();
 }
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cppcoreguidelines-owning-memory)
+TEST_F(exchange_server_tests, can_list_orders)
+{
+  // Events setup
+  std::array events{ epoll_event{ .data = { .fd = 100 } },
+    epoll_event{ .events = EPOLLIN, .data = { .fd = 300 } },
+    epoll_event{ .events = EPOLLIN, .data = { .fd = 300 } },
+    epoll_event{ .events = EPOLLIN, .data = { .fd = 300 } } };
+  EXPECT_CALL(*epoll, wait()).WillOnce(Return(std::span{ events })).WillOnce(Return(std::span<epoll_event>{}));
+
+  // Client connects
+  EXPECT_CALL(*listen, accept())
+    .WillOnce(Return(exchange_server::result<std::shared_ptr<exchange_server::socket_interface>>{ .result = client }));
+  EXPECT_CALL(*client, get_fd()).WillRepeatedly(Return(300));
+  EXPECT_CALL(*epoll, add(300, EPOLLIN));
+
+  // Client identifies, places order, and lists orders
+  EXPECT_CALL(*client, read)
+    .WillOnce(expect_read("idclient_id\n"))
+    .WillOnce(expect_read("order1234 BTCUSDT+001000010000\n"))
+    .WillOnce(expect_read("listorders\n"));
+
+  EXPECT_CALL(*client, write(IsMessage("ok\n"sv)))
+    .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 3 }));
+
+  EXPECT_CALL(*client, write(IsMessage("1234 BTCUSDT+001000010000\n"sv)))
+    .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 26 }));
+
+
+  exchange_server::server server{ listen, epoll, worker, control };
+  server.run();
+}
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,cppcoreguidelines-owning-memory)
+TEST_F(exchange_server_tests, can_list_symbols)
+{
+  // Events setup
+  std::array events{ epoll_event{ .data = { .fd = 100 } },
+    epoll_event{ .events = EPOLLIN, .data = { .fd = 300 } },
+    epoll_event{ .events = EPOLLIN, .data = { .fd = 300 } },
+    epoll_event{ .events = EPOLLIN, .data = { .fd = 300 } } };
+  EXPECT_CALL(*epoll, wait()).WillOnce(Return(std::span{ events })).WillOnce(Return(std::span<epoll_event>{}));
+
+  // Client connects
+  EXPECT_CALL(*listen, accept())
+    .WillOnce(Return(exchange_server::result<std::shared_ptr<exchange_server::socket_interface>>{ .result = client }));
+  EXPECT_CALL(*client, get_fd()).WillRepeatedly(Return(300));
+  EXPECT_CALL(*epoll, add(300, EPOLLIN));
+
+  // Client identifies, places order, and lists symbols
+  EXPECT_CALL(*client, read)
+    .WillOnce(expect_read("idclient_id\n"))
+    .WillOnce(expect_read("order1234 BTCUSDT+001000010000\n"))
+    .WillOnce(expect_read("listsymbols\n"));
+
+  EXPECT_CALL(*client, write(IsMessage("ok\n"sv)))
+    .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 3 }));
+
+  EXPECT_CALL(*client, write(IsMessage(" BTCUSDT\n"sv)))
+    .WillOnce(Return(exchange_server::result<std::ptrdiff_t>{ .result = 9 }));
+
+
+  exchange_server::server server{ listen, epoll, worker, control };
+  server.run();
+}

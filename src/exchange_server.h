@@ -34,6 +34,8 @@ private:
   static void on_client_id(std::string_view id_message, client_data &client_data);
   static void on_client_order(std::string_view order_message, client_data &client_data, state &state);
   static void on_client_cancel(std::string_view cancel_message, client_data &client_data);
+  static void on_client_list_orders(client_data &client_data);
+  static void on_client_list_symbols(client_data &client_data, state &state);
 
   std::shared_ptr<worker_interface> _worker;
   std::shared_ptr<exchange_server::listen_socket_interface> _listener;
