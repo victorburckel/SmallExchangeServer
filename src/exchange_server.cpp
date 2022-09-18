@@ -48,7 +48,7 @@ struct server::client_data
         if (const auto epoll = _epoll.lock())
         {
           std::uint32_t flags = EPOLLIN;
-          if (add_write) { flags &= EPOLLOUT; }
+          if (add_write) { flags |= EPOLLOUT; }
 
           epoll->modify(_sock->get_fd(), flags);
         }
@@ -58,13 +58,13 @@ struct server::client_data
     return {};
   }
 
-  result<std::optional<std::string>> read()
+  result<std::vector<std::string>> read()
   {
     auto [bytes_read, err] = _sock->read(_temp_read_buffer);
     if (err) { return { .err = err }; }
     else if (bytes_read == 0)
     {
-      return {};
+      return { .err = std::make_error_code(std::errc::connection_aborted) };
     }
 
     const auto data = std::string_view{ _temp_read_buffer.data(), static_cast<size_t>(bytes_read) };
@@ -74,15 +74,21 @@ struct server::client_data
     _read_buffer.insert(_read_buffer.end(), data.begin(), data.end());
 
     const auto is_eol = [](char c) { return c == '\n' || c == '\r'; };
-    auto it = std::find_if(_read_buffer.begin(), _read_buffer.end(), is_eol);
-    if (it != _read_buffer.end())
+
+    std::vector<std::string> result;
+
+    auto last = _read_buffer.begin();
+    for (auto previous = _read_buffer.begin(), next = std::find_if(previous, _read_buffer.end(), is_eol);
+         next != _read_buffer.end();)
     {
-      auto message = std::string{ _read_buffer.begin(), it };
-      _read_buffer.erase(_read_buffer.begin(), std::find_if(++it, _read_buffer.end(), std::not_fn(is_eol)));
-      return { .result = std::move(message) };
+      result.emplace_back(previous, next);
+      previous = last = std::find_if(next + 1, _read_buffer.end(), std::not_fn(is_eol));
+      next = std::find_if(previous, _read_buffer.end(), is_eol);
     }
 
-    return { .result = "" };
+    _read_buffer.erase(_read_buffer.begin(), last);
+
+    return { .result = result };
   }
 
 private:
@@ -172,23 +178,26 @@ void server::on_read(int fd)
 
   const auto client_data = client_data_it->second;
 
-  auto [message, err] = client_data->read();
-  if (err)
+  auto [messages, err] = client_data->read();
+  if (err && err.value() != static_cast<int>(std::errc::connection_aborted))
   {
     spdlog::error("Error while reading client message");
     return;
   }
-  else if (!message)
+  else if (err)
   {
     spdlog::info("Client ({}) disconnected", client_data->name);
     _client_data.erase(fd);
     return;
   }
-  else if (!message->empty())
+  else
   {
-    _worker->post([message = std::move(*message), client_data, state = _state] {
-      on_client_message(message, *client_data, *state);
-    });
+    for (auto &message : messages)
+    {
+      _worker->post([message = std::move(message), client_data, state = _state] {
+        on_client_message(message, *client_data, *state);
+      });
+    }
   }
 }
 
