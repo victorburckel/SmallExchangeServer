@@ -18,7 +18,7 @@ env:
 
 jobs:
   Test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
 
@@ -30,11 +30,10 @@ jobs:
       # Disable/enable builds in this list to meet the above recommendations
       # and your own projects needs
       matrix:
-        os:
-          - ubuntu-22.04
         compiler:
           # you can specify the version after `-` like "llvm-13.0.0".
-          - llvm-13.0.0
+          - llvm
+          - gcc
         generator:
           - "Ninja Multi-Config"
         build_type:
@@ -49,30 +48,18 @@ jobs:
           # if you try to use a compiler that does not have gcov set
           - compiler: gcc
             gcov_executable: gcov
-          - compiler: llvm-13.0.0
+            cxx: g++-11
+            cc: gcc-11
+          - compiler: llvm
             gcov_executable: "llvm-cov gcov"
+            cxx: clang++-13
+            cc: clang-13
 
           # Set up preferred package generators, for given build configurations
           - build_type: Release
             developer_mode: OFF
             package_generator: TBZ2
-
-          # This exists solely to make sure a non-multiconfig build works
-          - os: ubuntu-20.04
-            compiler: gcc
-            generator: "Unix Makefiles"
-            build_type: Debug
-            gcov_executable: gcov
-            developer_mode: On
-
     steps:
-      - name: Check for llvm version mismatches
-        if: ${{ contains(matrix.compiler, 'llvm') && !contains(matrix.compiler, env.CLANG_TIDY_VERSION) }}
-        uses: actions/github-script@v3
-        with:
-          script: |
-            core.setFailed('There is a mismatch between configured llvm compiler and clang-tidy version chosen')
-
       - uses: actions/checkout@v2
 
       - name: Setup Cache
@@ -83,34 +70,40 @@ jobs:
           developer_mode: ${{ matrix.developer_mode }}
           generator: ${{ matrix.generator }}
 
-      - name: Setup Cpp
-        uses: aminya/setup-cpp@v1
+      - name: Get Conan
+        uses: turtlebrowser/get-conan@v1.0
+
+      - name: Install ninja
+        run: sudo apt-get install ninja-build
+
+      - name: Install cppcheck
+        run: sudo apt-get install cppcheck
+
+      - name: Install gcovr
+        run: sudo pip install gcovr
+
+      - name: Set up GCC
+        if: ${{ matrix.compiler }} == 'gcc'
+        uses: egor-tensin/setup-gcc@v1
         with:
-          compiler: ${{ matrix.compiler }}
-          vcvarsall: ${{ contains(matrix.os, 'windows' )}}
+          version: 11
+          platform: x64
 
-          cmake: true
-          ninja: true
-          conan: true
-          vcpkg: false
-          ccache: true
-          clangtidy: ${{ env.CLANG_TIDY_VERSION }}
-
-
-          cppcheck: true
-
-          gcovr: true
-          opencppcoverage: true
-
-      - name: Cleanup Conan system packages (they are not properly cached)
-        run: |
-          conan remove -f '*/system'
+      - name: Set up Clang
+        if: ${{ matrix.compiler }} == 'llvm'
+        uses: egor-tensin/setup-clang@v1
+        with:
+          version: 13
+          platform: x64
 
         # make sure coverage is only enabled for Debug builds, since it sets -O0 to make sure coverage
         # has meaningful results
       - name: Configure CMake
         run: |
           cmake -S . -B ./build -G "${{matrix.generator}}" -DCMAKE_BUILD_TYPE:STRING=${{matrix.build_type}} -DENABLE_DEVELOPER_MODE:BOOL=${{matrix.developer_mode}} -DOPT_ENABLE_COVERAGE:BOOL=${{ matrix.build_type == 'Debug' }} -DGIT_SHA:STRING=${{ github.sha }}
+        env:
+          CC:   ${{ matrix.cc }}
+          CXX:  ${{ matrix.cxx }}
 
       - name: Build
         # Execute the build.  You can specify a specific target with "--target <NAME>"
